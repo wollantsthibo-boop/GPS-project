@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>My GPS</title>
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f4f8;
+            color: #222;
+        }
+
+        header {
+            background: #1769e0;
+            color: white;
+            padding: 18px;
+            text-align: center;
+        }
+
+        header h1 {
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+
+        .panel {
+            background: white;
+            padding: 18px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .field {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 7px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 7px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 7px;
+            background: #1769e0;
+            color: white;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        button:hover {
+            background: #1054b8;
+        }
+
+        .secondary {
+            background: #e8eef8;
+            color: #174a91;
+        }
+
+        .secondary:hover {
+            background: #d8e4f5;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 7px;
+            z-index: 1000;
+            box-shadow: 0 5px 12px #0002;
+            overflow: hidden;
+        }
+
+        .suggestion {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background: white;
+            color: #222;
+            text-align: left;
+            border-radius: 0;
+            border-bottom: 1px solid #eee;
+            line-height: 1.4;
+        }
+
+        .suggestion:hover {
+            background: #eef4ff;
+        }
+
+        .suggestion small {
+            display: block;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .route-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 35px;
+        }
+
+        .route-info strong {
+            display: block;
+            font-size: 22px;
+            margin-top: 5px;
+        }
+
+        .muted {
+            color: #666;
+            font-size: 14px;
+        }
+
+        #map {
+            width: 100%;
+            height: 500px;
+            border-radius: 12px;
+        }
+
+        #status {
+            line-height: 1.5;
+        }
+
+        @media (max-width: 600px) {
+            #map {
+                height: 400px;
+            }
+
+            .route-info {
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>My GPS</h1>
+    <p>Choose your start and destination</p>
+</header>
+
+<main class="container">
+
+    <section class="panel">
+
+        <div class="field">
+
+            <label for="startInput">Start location</label>
+
+            <input
+                id="startInput"
+                type="text"
+                placeholder="Enter a starting address..."
+                autocomplete="off"
+            >
+
+            <div
+                id="startSuggestions"
+                class="suggestions"
+                hidden
+            ></div>
+
+        </div>
+
+        <button
+            id="useLocationButton"
+            class="secondary"
+            type="button"
+        >
+            Use my current location
+        </button>
+
+        <div class="field" style="margin-top: 20px;">
+
+            <label for="destinationInput">Destination</label>
+
+            <input
+                id="destinationInput"
+                type="text"
+                placeholder="Where do you want to go?"
+                autocomplete="off"
+            >
+
+            <div
+                id="destinationSuggestions"
+                class="suggestions"
+                hidden
+            ></div>
+
+        </div>
+
+        <div class="actions">
+
+            <button id="routeButton" type="button">
+                Find route
+            </button>
+
+            <button
+                id="refreshLocationButton"
+                class="secondary"
+                type="button"
+            >
+                Refresh GPS
+            </button>
+
+        </div>
+
+        <p id="status" aria-live="polite">
+            Choose a starting point and destination.
+        </p>
+
+        <p id="accuracy" class="muted">
+            GPS accuracy: not available
+        </p>
+
+    </section>
+
+    <section class="panel">
+
+        <div class="route-info">
+
+            <div>
+                <span class="muted">Distance</span>
+                <strong id="distance">--</strong>
+            </div>
+
+            <div>
+                <span class="muted">Estimated time</span>
+                <strong id="time">--</strong>
+            </div>
+
+        </div>
+
+    </section>
+
+    <div id="map"></div>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    const API_KEY = "e08abb01756c4696b0d04b6da6ced314";
+
+    // Start the map at Leuven.
+    const map = L.map("map").setView(
+        [50.8798, 4.7005],
+        13
+    );
+
+    L.tileLayer(
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                '&copy; OpenStreetMap contributors'
+        }
+    ).addTo(map);
+
+
+    // Selected coordinates.
+    let startLocation = null;
+    let destinationLocation = null;
+
+    let currentMarker = null;
+    let accuracyCircle = null;
+    let startMarker = null;
+    let destinationMarker = null;
+    let routeLine = null;
+
+    let gpsWatchId = null;
+
+    const startInput =
+        document.getElementById("startInput");
+
+    const destinationInput =
+        document.getElementById("destinationInput");
+
+
+    function showStatus(message) {
+        document.getElementById("status").textContent =
+            message;
+    }
+
+
+    // Search for places and addresses.
+    async function searchPlaces(query) {
+
+        const url =
+            "https://api.geoapify.com/v1/geocode/autocomplete" +
+            "?text=" + encodeURIComponent(query) +
+            "&format=json" +
+            "&limit=5" +
+            "&lang=en" +
+            "&filter=countrycode:be" +
+            "&apiKey=" + encodeURIComponent(API_KEY);
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("Place search failed.");
+        }
+
+        const data = await response.json();
+
+        return data.results || [];
+    }
+
+
+    // Add live suggestions to a search field.
+    function setupAutocomplete(input, list, onSelect) {
+
+        let timer = null;
+        let requestNumber = 0;
+
+        input.addEventListener("input", function () {
+
+            clearTimeout(timer);
+
+            const query = input.value.trim();
+            const thisRequest = ++requestNumber;
+
+            list.replaceChildren();
+            list.hidden = true;
+
+            if (query.length < 3) {
+                return;
+            }
+
+            timer = setTimeout(async function () {
+
+                try {
+
+                    const results = await searchPlaces(query);
+
+                    // Ignore outdated responses.
+                    if (thisRequest !== requestNumber) {
+                        return;
+                    }
+
+                    list.replaceChildren();
+
+                    results.forEach(function (place) {
+
+                        if (
+                            !Number.isFinite(Number(place.lat)) ||
+                            !Number.isFinite(Number(place.lon))
+                        ) {
+                            return;
+                        }
+
+                        const button =
+                            document.createElement("button");
+
+                        button.type = "button";
+                        button.className = "suggestion";
+
+                        const name =
+                            document.createElement("span");
+
+                        name.textContent =
+                            place.name || place.address_line1 ||
+                            place.formatted;
+
+                        const address =
+                            document.createElement("small");
+
+                        address.textContent =
+                            place.formatted;
+
+                        button.appendChild(name);
+                        button.appendChild(address);
+
+                        button.addEventListener("click", function () {
+
+                            input.value = place.formatted;
+
+                            list.hidden = true;
+
+                            onSelect([
+                                Number(place.lat),
+                                Number(place.lon)
+                            ]);
+
+                        });
+
+                        list.appendChild(button);
+
+                    });
+
+                    list.hidden = results.length === 0;
+
+                } catch (error) {
+
+                    if (thisRequest === requestNumber) {
+                        list.hidden = true;
+                        showStatus(
+                            "Place search failed. Check your API key and internet connection."
+                        );
+                    }
+
+                }
+
+            }, 350);
+
+        });
+
+        document.addEventListener("click", function (event) {
+
+            if (
+                event.target !== input &&
+                !list.contains(event.target)
+            ) {
+                list.hidden = true;
+            }
+
+        });
+
+    }
+
+
+    function updateStartMarker() {
+
+        if (!startLocation) {
+            return;
+        }
+
+        if (startMarker) {
+            map.removeLayer(startMarker);
+        }
+
+        startMarker = L.marker(startLocation)
+            .addTo(map)
+            .bindPopup("Starting location");
+    }
+
+
+    function updateDestinationMarker() {
+
+        if (!destinationLocation) {
+            return;
+        }
+
+        if (destinationMarker) {
+            map.removeLayer(destinationMarker);
+        }
+
+        destinationMarker = L.marker(destinationLocation)
+            .addTo(map)
+            .bindPopup("Destination");
+    }
+
+
+    // Select a searched starting point.
+    function selectStart(location) {
+
+        startLocation = location;
+
+        updateStartMarker();
+
+        map.setView(location, 16);
+
+        showStatus("Starting location selected.");
+    }
+
+
+    // Select a searched destination.
+    function selectDestination(location) {
+
+        destinationLocation = location;
+
+        updateDestinationMarker();
+
+        map.setView(location, 15);
+
+        showStatus("Destination selected.");
+    }
+
+
+    setupAutocomplete(
+        startInput,
+        document.getElementById("startSuggestions"),
+        selectStart
+    );
+
+    setupAutocomplete(
+        destinationInput,
+        document.getElementById("destinationSuggestions"),
+        selectDestination
+    );
+
+
+    // Get a fresh GPS location.
+    function findMyLocation() {
+
+        if (!navigator.geolocation) {
+
+            showStatus(
+                "Your browser does not support location services."
+            );
+
+            return;
+        }
+
+        showStatus(
+            "Getting your location. This may take a little while..."
+        );
+
+        navigator.geolocation.getCurrentPosition(
+
+            function (position) {
+
+                const latitude =
+                    position.coords.latitude;
+
+                const longitude =
+                    position.coords.longitude;
+
+                const accuracy =
+                    position.coords.accuracy;
+
+                const location = [
+                    latitude,
+                    longitude
+                ];
+
+                // Save the current GPS position.
+                // Use it as the start only when appropriate.
+                startLocation = location;
+
+                startInput.value = "My current location";
+
+                updateStartMarker();
+
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                }
+
+                currentMarker = L.circleMarker(
+                    location,
+                    {
+                        radius: 8,
+                        color: "#ffffff",
+                        weight: 3,
+                        fillColor: "#1769e0",
+                        fillOpacity: 1
+                    }
+                ).addTo(map);
+
+                currentMarker.bindPopup(
+                    "Your device location"
+                );
+
+                // Display the reported accuracy.
+                if (accuracyCircle) {
+                    map.removeLayer(accuracyCircle);
+                }
+
+                accuracyCircle = L.circle(
+                    location,
+                    {
+                        radius: accuracy,
+                        color: "#1769e0",
+                        fillColor: "#1769e0",
+                        fillOpacity: 0.12,
+                        weight: 1
+                    }
+                ).addTo(map);
+
+                document.getElementById("accuracy")
+                    .textContent =
+                    "Reported GPS accuracy: about " +
+                    Math.round(accuracy) + " metres";
+
+                map.fitBounds(
+                    accuracyCircle.getBounds(),
+                    {
+                        maxZoom: 16
+                    }
+                );
+
+                showStatus(
+                    accuracy > 100
+                        ? "Location found, but accuracy is low. Try refreshing outdoors."
+                        : "Current location updated."
+                );
+
+            },
+
+            function (error) {
+
+                if (error.code === 1) {
+
+                    showStatus(
+                        "Location permission denied. Allow location access in your browser."
+                    );
+
+                } else if (error.code === 2) {
+
+                    showStatus(
+                        "Location unavailable. Check your device's location settings."
+                    );
+
+                } else {
+
+                    showStatus(
+                        "Could not get an accurate location in time. Try again."
+                    );
+
+                }
+
+            },
+
+            {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: 30000
+            }
+
+        );
+    }
+
+
+    // Calculate a driving route.
+    async function calculateRoute() {
+
+        if (!startLocation || !destinationLocation) {
+
+            showStatus(
+                "Select both a starting location and a destination."
+            );
+
+            return;
+        }
+
+        showStatus("Calculating route...");
+
+        try {
+
+            const start =
+                startLocation[1] + "," +
+                startLocation[0];
+
+            const end =
+                destinationLocation[1] + "," +
+                destinationLocation[0];
+
+            const url =
+                "https://router.project-osrm.org/route/v1/driving/" +
+                start + ";" + end +
+                "?overview=full&geometries=geojson";
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error("Routing request failed.");
+            }
+
+            const data = await response.json();
+
+            if (
+                data.code !== "Ok" ||
+                !data.routes ||
+                data.routes.length === 0
+            ) {
+
+                showStatus("No driving route was found.");
+                return;
+            }
+
+            const route = data.routes[0];
+
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+
+            routeLine = L.geoJSON(
+                route.geometry,
+                {
+                    style: {
+                        color: "#1769e0",
+                        weight: 6,
+                        opacity: 0.85
+                    }
+                }
+            ).addTo(map);
+
+            map.fitBounds(
+                routeLine.getBounds(),
+                {
+                    padding: [35, 35]
+                }
+            );
+
+            document.getElementById("distance")
+                .textContent =
+                (route.distance / 1000).toFixed(1) + " km";
+
+            const minutes = Math.round(
+                route.duration / 60
+            );
+
+            const hours = Math.floor(minutes / 60);
+
+            const remainingMinutes = minutes % 60;
+
+            document.getElementById("time")
+                .textContent =
+                hours > 0
+                    ? hours + " h " + remainingMinutes + " min"
+                    : minutes + " min";
+
+            showStatus("Route calculated successfully.");
+
+        } catch (error) {
+
+            showStatus(
+                "Could not calculate the route. Please try again."
+            );
+
+        }
+
+    }
+
+
+    document.getElementById("useLocationButton")
+        .addEventListener("click", findMyLocation);
+
+    document.getElementById("refreshLocationButton")
+        .addEventListener("click", findMyLocation);
+
+    document.getElementById("routeButton")
+        .addEventListener("click", calculateRoute);
+
+
+    // Close suggestions with Escape.
+    document.addEventListener("keydown", function (event) {
+
+        if (event.key === "Escape") {
+
+            document.getElementById("startSuggestions")
+                .hidden = true;
+
+            document.getElementById("destinationSuggestions")
+                .hidden = true;
+
+        }
+
+    });
+
+</script>
+
+</body>
+</html>

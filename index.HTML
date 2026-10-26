@@ -322,27 +322,52 @@
 
     // Search for places and addresses.
     async function searchPlaces(query) {
+        const baseUrl =
+            "https://api.geoapify.com/v1/geocode/search";
 
-        const url =
-            "https://api.geoapify.com/v1/geocode/autocomplete" +
+        const countryUrl =
+            baseUrl +
             "?text=" + encodeURIComponent(query) +
-            "&format=json" +
-            "&limit=5" +
+            "&type=country" +
+            "&limit=10" +
             "&lang=en" +
-            "&filter=countrycode:be" +
             "&apiKey=" + encodeURIComponent(API_KEY);
 
-        const response = await fetch(url);
+        const placesUrl =
+            "https://api.geoapify.com/v1/geocode/autocomplete" +
+            "?text=" + encodeURIComponent(query) +
+            "&limit=10" +
+            "&lang=en" +
+            "&apiKey=" + encodeURIComponent(API_KEY);
 
-        if (!response.ok) {
+        const countryResponse = await fetch(countryUrl);
+        const placesResponse = await fetch(placesUrl);
+
+        if (!countryResponse.ok || !placesResponse.ok) {
             throw new Error("Place search failed.");
         }
 
-        const data = await response.json();
+        const countryData = await countryResponse.json();
+        const placesData = await placesResponse.json();
 
-        return data.results || [];
+        const countries = (countryData.results || []).filter(
+            function (place) {
+                return place.result_type === "country";
+            }
+        );
+
+        const places = placesData.results || [];
+
+        return countries.concat(
+            places.filter(function (place) {
+                return !countries.some(function (country) {
+                    return country.country_code === place.country_code &&
+                        country.result_type === place.result_type &&
+                        country.formatted === place.formatted;
+                });
+            })
+        );
     }
-
 
     // Add live suggestions to a search field.
     function setupAutocomplete(input, list, onSelect) {
@@ -394,10 +419,15 @@
 
                         const name =
                             document.createElement("span");
+                        
+                        const flag =
+                            place.result_type === "country"
+                                ? getCountryFlag(place.country_code)
+                                : "";
 
                         name.textContent =
-                            place.name || place.address_line1 ||
-                            place.formatted;
+                            (flag ? flag + " " : "") +
+                            (place.name || place.address_line1 || place.formatted);
 
                         const address =
                             document.createElement("small");
